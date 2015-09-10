@@ -1,0 +1,237 @@
+<?php
+
+namespace Setsuna\Core;
+
+use Setsuna\Router\Router;
+use Setsuna\Core\Pimple;
+use Setsuna\Database\Connection;
+use Setsuna\Database\Mysql;
+use \Exception;
+
+
+class Application 
+{ 
+
+    protected $router;
+
+    public static $container = '';
+
+    public function __construct() {
+
+    
+    }
+
+   public function detectEnvironment($environments = array()){
+    
+    	foreach ($environments as $environment => $hosts)
+		{
+			
+			foreach ((array) $hosts as $host)
+			{
+				if ($host == gethostname()) return $environment;
+			}
+		}
+
+		return 'production';
+    
+    }
+
+
+
+
+
+    public function init()
+    {
+        $container = new Pimple();
+        $container['carrier'] = array(
+            'suffix'  => array(
+                'class' => 'Controller',
+                'action' => 'Action',
+            ),
+     
+        );
+
+        $container['APP_ROOT'] = APPPATH;
+
+
+        $env = $this->detectEnvironment();
+
+
+
+        //init router
+        $container['Router'] = $container->share(function() {
+            return new Router();
+        });
+
+        //init router
+        $container['redis'] = $container->share(function() {
+            $config = include(APPPATH . '/config/' . GN_ENVIRONMENT . '/cache.php');
+            return new \Setsuna\Storage\Cache\Redis($config['default']);
+        });
+
+
+        $container['db'] = $container->share(function(){
+            $config = include(APPPATH . '/config/' . GN_ENVIRONMENT . '/database.php');
+            return new Connection($config['default']);
+        });
+
+
+        $container['mysql'] = $container->share(function(){
+
+            $config = include(APPPATH . '/config/' . GN_ENVIRONMENT . '/database.php');
+
+            $mysql = new Mysql();
+            return $mysql->get_instance(
+                $config['default']['hostname'] . ':' . $config['default']['port'] , 
+                $config['default']['username'] ,
+                $config['default']['password'] ,
+                $config['default']['database']
+            );
+        
+        });
+
+
+        self::$container = $container;
+
+        return $container;
+    }
+
+    /**
+     * @return type
+     */
+
+    public function run() {
+
+        if('cli' == GN_SAPI_NAME) {
+            @$reqUri = '/' . ltrim($_SERVER['argv'][1] , '/');
+        }else{
+            $reqUri = array_shift(explode('?', $_SERVER['REQUEST_URI']));
+        }
+
+
+        list($call, $param) = self::$container['Router']->dispatch($reqUri);
+
+
+        if (is_array($call)) {
+            $class = empty($call[0]) ? 'index' . self::$container['carrier']['suffix']['class'] 
+                : $call[0] . self::$container['carrier']['suffix']['class'];
+            $func = empty($call[1]) ? 'index' . self::$container['carrier']['suffix']['action'] 
+                : $call[1] . self::$container['carrier']['suffix']['action'];
+
+            $c = new $class(self::$container);
+
+          
+            return call_user_func(array($c , $func));
+
+
+        } else {
+            // i dont know
+            return $call($param);
+        }
+    }
+
+
+    /* protected function bootupServer() */
+    /* { */
+    
+    /*     //+++++++++++++++++++++++++++++ */
+    /*     //bootstart database */
+
+    /*     $config = include(APPPATH . '/config/local/database.php'); */
+    
+
+    /*     $containerPrefix = (isset($config['as']) AND !empty($config['as'])) ? $config['as'] : 'database'; */
+
+    /*     foreach($config as $key => $value) */
+    /*     { */
+    /*         if('as' == $key OR empty($value)) { continue; } */
+        
+    /*         //$this->container[$containerPrefix] = 1; */
+        
+
+    /*         switch (arrayLevel($value)) { */
+
+    /*             case 1 : */
+
+    /*                 $this->container[$containerPrefix][$key] =  $container->share(function() use ($value){ */
+    /*                     return new Connection($value); */
+    /*                 }); */
+
+                    
+    /*                 break; */
+                
+    /*             case 2 : */
+
+    /*                 $this->container[$containerPrefix][$key] = $container->share(function() use ($value) { */
+    /*                     return new Connection(get_weight_params($value)); */
+                    
+    /*                 }); */
+
+                    
+    /*                 break; */
+
+    /*             case 3 : */
+
+    /*                 foreach ($value as $k => $v) { */
+
+    /*                     if('master' == $k) { */
+                        
+    /*                         $this->container[$containerPrefix][$key]['master'] = $container->share(function() use ($v) { */
+    /*                             return new Connection($k); */
+                            
+    /*                         }); */
+                        
+    /*                     }//elseif('slave' == $k) */
+                        
+    /*                 } */
+               
+
+    /*             default: */
+                    
+    /*                 break; */
+    /*         } */
+
+        
+    /*     } */
+    
+    
+
+    /*     function arrayLevel($arr){ */
+    /*         $al = array(0); */
+    /*         function aL($arr,&$al,$level=0){ */
+    /*             if(is_array($arr)){ */
+    /*                 $level++; */
+    /*                 $al[] = $level; */
+    /*                 foreach($arr as $v){ */
+    /*                     aL($v,$al,$level); */
+    /*                 } */
+    /*             } */
+    /*         } */
+    /*         aL($arr,$al); */
+    /*         return max($al); */
+    /*     } */
+
+
+    /*     function get_weight_params($data , $string = 'weight'){ */
+
+    /*         $weight = 0; */
+    /*         $tmp = array(); */
+    /*         foreach($data as $v){ */
+    /*             $weight += $v[$string]; */
+    /*             for($i = 0 ; $i < $v[$string] ; $i++){ */
+    /*                 $tmp[] = $v;//放大数组 */
+    /*             } */
+    /*         } */
+    /*         $int = mt_rand(0 , $weight - 1);//获取一个随机数 */
+    /*         $result = $tmp[$int]; */
+    /*         unset($tmp); */
+    /*         return $result; */
+    /*     } */
+
+
+    /* } */
+
+
+}
+
+
